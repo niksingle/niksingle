@@ -1,0 +1,110 @@
+variable name string sinter
+
+units           metal
+
+boundary        p p p 
+
+atom_style  atomic
+
+neighbor        3.0 bin
+
+neigh_modify    every 1 delay 2 check yes
+
+read_restart minim.restart
+
+pair_style eam/alloy
+
+pair_coeff * * Al-2009.eam.alloy Al 
+
+
+reset_timestep 0
+#######################################################
+
+#                    SINTERING PROCESS                #
+
+#######################################################
+
+timestep 0.0005
+
+#compute 3 all pe/atom
+#compute 4 all stress/atom NULL ke pair
+#dump ini all custom 1000 dump.eve_${name}.* id type x y z vx vy vz c_3 c_4[1] c_4[2] c_4[3]    #dump all atoms 
+#dump sli all custom 500 dump.sli_${name}.* id type x y z vx vy vz c_3 c_4[1] c_4[2] c_4[3]     #and thin middle slice for viz
+#dump_modify sli thresh y > -10
+#dump_modify sli thresh y < 10
+
+variable initT equal 300
+variable midT equal 900
+variable highT equal 1500
+variable midP equal 1.5
+variable highP equal 2
+
+reset_timestep 0
+velocity  layer1 create 300 12345
+
+#ramp up the up the temperature
+
+fix npt layer1 npt temp ${initT} ${midT} 0.001 z 1 1 0.075
+thermo 1000
+thermo_modify	lost ignore
+run 20000        
+unfix npt
+
+#hold temp and ramp up pressure
+
+fix npt1 layer1 npt temp ${midT} ${midT} 0.001 z 0 ${midP} 0.075
+thermo 1000
+thermo_modify	lost ignore
+run 20000
+unfix npt1
+
+#bring temperature up to 0.8 Tm
+
+fix npt2 layer1 npt temp ${midT} ${highT} 0.001 z ${midP} ${midP} 0.075
+thermo 1000
+thermo_modify	lost ignore
+run 20000
+unfix npt2
+
+#bring pressure up to 1 GPa
+
+fix npt layer1 npt temp ${highT} ${highT} 0.001 z ${midP} ${highP} 0.001
+thermo 1000
+thermo_modify	lost ignore
+run 20000
+unfix npt
+
+#dwell at high pressure and temperature
+
+fix npt layer1 npt temp ${highT} ${highT} 0.001 z ${highP} ${highP} 0.001
+thermo 5000
+thermo_modify	lost ignore
+run 60000
+unfix npt
+
+#ramp down both pressure and temp
+
+fix npt layer1 npt temp ${highT} ${midT} 0.001 z ${highP} ${midP} 0.001
+thermo 1000
+thermo_modify	lost ignore
+run 20000
+unfix npt
+
+#pressure and temp brought to target values
+
+#final dwell at equlibrium target P & T
+
+fix npt base npt temp ${initT} ${initT} 0.001 z 1 1 0.001
+thermo 1000
+thermo_modify	lost ignore
+run 100000
+unfix npt
+
+#output data file 
+
+dump		iniatom all atom 1 ex.ini.atom
+run 		1	
+undump 	iniatom
+
+print "Jobs done"
+
